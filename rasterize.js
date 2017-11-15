@@ -289,13 +289,13 @@ function loadModels() {
                 
                 // make vertices
                 var ellipsoidVertices = [0,-1,0]; // vertices to return, init to south pole
-                var angleIncr = (Math.PI+Math.PI) / numLongSteps; // angular increment 
-                var latLimitAngle = angleIncr * (Math.floor(numLongSteps/4)-1); // start/end lat angle
+                var angleIncr = (Math.PI + Math.PI) / numLongSteps; // angular increment 
+                var latLimitAngle = angleIncr * (Math.floor(numLongSteps/4) - 1); // start/end lat angle
                 var latRadius, latY; // radius and Y at current latitude
-                for (var latAngle=-latLimitAngle; latAngle<=latLimitAngle; latAngle+=angleIncr) {
+                for (var latAngle =- latLimitAngle; latAngle <= latLimitAngle; latAngle += angleIncr) {
                     latRadius = Math.cos(latAngle); // radius of current latitude
                     latY = Math.sin(latAngle); // height at current latitude
-                    for (var longAngle=0; longAngle<2*Math.PI; longAngle+=angleIncr) // for each long
+                    for (var longAngle = 0 ; longAngle < 2*Math.PI ; longAngle += angleIncr) // for each long
                         ellipsoidVertices.push(latRadius*Math.sin(longAngle),latY,latRadius*Math.cos(longAngle));
                 } // end for each latitude
                 ellipsoidVertices.push(0,1,0); // add north pole
@@ -326,20 +326,20 @@ function loadModels() {
                 
                 // make triangles, from south pole to middle latitudes to north pole
                 var ellipsoidTriangles = []; // triangles to return
-                for (var whichLong=1; whichLong<numLongSteps; whichLong++) // south pole
-                    ellipsoidTriangles.push(0,whichLong,whichLong+1);
+                for (var whichLong = 1; whichLong < numLongSteps ; whichLong++) // south pole
+                    ellipsoidTriangles.push(0,whichLong,whichLong + 1);
                 ellipsoidTriangles.push(0,numLongSteps,1); // longitude wrap tri
                 var llVertex; // lower left vertex in the current quad
-                for (var whichLat=0; whichLat<(numLongSteps/2 - 2); whichLat++) { // middle lats
-                    for (var whichLong=0; whichLong<numLongSteps-1; whichLong++) {
-                        llVertex = whichLat*numLongSteps + whichLong + 1;
+                for (var whichLat=0 ; whichLat<(numLongSteps/2 - 2) ; whichLat++) { // middle lats
+                    for (var whichLong=0 ; whichLong < numLongSteps-1 ; whichLong++) {
+                        llVertex = whichLat * numLongSteps + whichLong + 1;
                         ellipsoidTriangles.push(llVertex,llVertex+numLongSteps,llVertex+numLongSteps+1);
                         ellipsoidTriangles.push(llVertex,llVertex+numLongSteps+1,llVertex+1);
                     } // end for each longitude
                     ellipsoidTriangles.push(llVertex+1,llVertex+numLongSteps+1,llVertex+2);
                     ellipsoidTriangles.push(llVertex+1,llVertex+2,llVertex-numLongSteps+2);
                 } // end for each latitude
-                for (var whichLong=llVertex+2; whichLong<llVertex+numLongSteps+1; whichLong++) // north pole
+                for (var whichLong = llVertex + 2 ; whichLong < llVertex + numLongSteps + 1; whichLong++) // north pole
                     ellipsoidTriangles.push(whichLong,ellipsoidVertices.length/3-1,whichLong+1);
                 ellipsoidTriangles.push(ellipsoidVertices.length/3-2,ellipsoidVertices.length/3-1,
                                         ellipsoidVertices.length/3-numLongSteps-1); // longitude wrap
@@ -369,7 +369,7 @@ function loadModels() {
         
             // process each triangle set to load webgl vertex and triangle buffers
             numTriangleSets = inputTriangles.length; // remember how many tri sets
-            for (var whichSet=0; whichSet<numTriangleSets; whichSet++) { // for each tri set
+            for (var whichSet = 0; whichSet < numTriangleSets ; whichSet++) { // for each tri set
                 
                 // set up hilighting, modeling translation and rotation
                 inputTriangles[whichSet].center = vec3.fromValues(0,0,0);  // center point of tri set
@@ -404,7 +404,7 @@ function loadModels() {
                 // set up the triangle index array, adjusting indices across sets
                 inputTriangles[whichSet].glTriangles = []; // flat index list for webgl
                 triSetSizes[whichSet] = inputTriangles[whichSet].triangles.length; // number of tris in this set
-                for (whichSetTri=0; whichSetTri<triSetSizes[whichSet]; whichSetTri++) {
+                for (whichSetTri = 0; whichSetTri < triSetSizes[whichSet] ; whichSetTri++) {
                     triToAdd = inputTriangles[whichSet].triangles[whichSetTri]; // get tri to add
                     inputTriangles[whichSet].glTriangles.push(triToAdd[0],triToAdd[1],triToAdd[2]); // put indices in set list
                 } // end for triangles in set
@@ -428,7 +428,7 @@ function loadModels() {
                 var temp = vec3.create(); // an intermediate vec3
                 var minXYZ = vec3.create(), maxXYZ = vec3.create();  // min/max xyz from ellipsoid
                 numEllipsoids = inputEllipsoids.length; // remember how many ellipsoids
-                for (var whichEllipsoid=0; whichEllipsoid<numEllipsoids; whichEllipsoid++) {
+                for (var whichEllipsoid = 0; whichEllipsoid < numEllipsoids; whichEllipsoid++) {
                     
                     // set up various stats and transforms for this ellipsoid
                     ellipsoid = inputEllipsoids[whichEllipsoid];
@@ -494,7 +494,7 @@ function setupShaders() {
 
             // vertex normal (assume no non-uniform scale)
             vec4 vWorldNormal4 = umMatrix * vec4(aVertexNormal, 0.0);
-            vVertexNormal = normalize(vec3(vWorldNormal4.x,vWorldNormal4.y,vWorldNormal4.z)); 
+            vVertexNormal = normalize(vec3(vWorldNormal4.x, vWorldNormal4.y, vWorldNormal4.z)); 
         }
     `;
     
@@ -524,13 +524,13 @@ function setupShaders() {
         void main(void) {
         
             // ambient term
-            vec3 ambient = uAmbient*uLightAmbient; 
+            vec3 ambient = uAmbient * uLightAmbient; 
             
             // diffuse term
             vec3 normal = normalize(vVertexNormal); 
             vec3 light = normalize(uLightPosition - vWorldPos);
             float lambert = max(0.0,dot(normal,light));
-            vec3 diffuse = uDiffuse*uLightDiffuse*lambert; // diffuse term
+            vec3 diffuse = uDiffuse * uLightDiffuse * lambert; // diffuse term
             
             // specular term
             vec3 eye = normalize(uEyePosition - vWorldPos);
@@ -657,7 +657,7 @@ function renderModels() {
 
     // render each triangle set
     var currSet; // the tri set and its material properties
-    for (var whichTriSet=0; whichTriSet<numTriangleSets; whichTriSet++) {
+    for (var whichTriSet = 0; whichTriSet < numTriangleSets; whichTriSet++) {
         currSet = inputTriangles[whichTriSet];
         
         // make model transform, add to view project
@@ -687,7 +687,7 @@ function renderModels() {
     // render each ellipsoid
     var ellipsoid, instanceTransform = mat4.create(); // the current ellipsoid and material
     
-    for (var whichEllipsoid=0; whichEllipsoid<numEllipsoids; whichEllipsoid++) {
+    for (var whichEllipsoid = 0; whichEllipsoid < numEllipsoids; whichEllipsoid++) {
         ellipsoid = inputEllipsoids[whichEllipsoid];
         
         // define model transform, premult with pvmMatrix, feed to vertex shader
