@@ -24,6 +24,12 @@ var normalBuffers = []; // this contains normal component lists by set, in tripl
 var triSetSizes = []; // this contains the size of each triangle set
 var triangleBuffers = []; // lists of indices into vertexBuffers by set, in triples
 
+var textureBuffers = []; // this contains texture in sets
+var textures = []; // the list to hold all the textures
+
+//var vertexTextureAttribLoc
+//var sampleUniform
+
 /* shader parameter locations */
 var vPosAttribLoc; // where to put position for vertex shader
 var mMatrixULoc; // where to put model matrix for vertex shader
@@ -286,6 +292,10 @@ function loadModels() {
             else { // good number longitude steps
             
                 console.log("ellipsoid xyz: "+ ellipsoid.x +" "+ ellipsoid.y +" "+ ellipsoid.z);
+				
+				// for the ellipsoids add the u,v for the textures
+				var addUV = [];
+				addUV.push(0, 1);
                 
                 // make vertices
                 var ellipsoidVertices = [0,-1,0]; // vertices to return, init to south pole
@@ -295,8 +305,12 @@ function loadModels() {
                 for (var latAngle =- latLimitAngle; latAngle <= latLimitAngle; latAngle += angleIncr) {
                     latRadius = Math.cos(latAngle); // radius of current latitude
                     latY = Math.sin(latAngle); // height at current latitude
-                    for (var longAngle = 0 ; longAngle < 2*Math.PI ; longAngle += angleIncr) // for each long
+                    for (var longAngle = 0 ; longAngle < 2 * Math.PI ; longAngle += angleIncr) // for each long
                         ellipsoidVertices.push(latRadius*Math.sin(longAngle),latY,latRadius*Math.cos(longAngle));
+						// Add u,v for texture location
+						var u = longAngle / (2 * Math.PI);
+						var v = (latAngle + latLimitAngle)/(2 * latLimitAngle);
+						addUV.push(u, v);
                 } // end for each latitude
                 ellipsoidVertices.push(0,1,0); // add north pole
                 ellipsoidVertices = ellipsoidVertices.map(function(val,idx) { // position and scale ellipsoid
@@ -381,15 +395,24 @@ function loadModels() {
                 // set up the vertex and normal arrays, define model center and axes
                 inputTriangles[whichSet].glVertices = []; // flat coord list for webgl
                 inputTriangles[whichSet].glNormals = []; // flat normal list for webgl
+				
+				inputTriangles[whichSet].textureCoords = []; // flat texture u,v list for webgl
+				
                 var numVerts = inputTriangles[whichSet].vertices.length; // num vertices in tri set
                 for (whichSetVert=0; whichSetVert<numVerts; whichSetVert++) { // verts in set
                     vtxToAdd = inputTriangles[whichSet].vertices[whichSetVert]; // get vertex to add
                     normToAdd = inputTriangles[whichSet].normals[whichSetVert]; // get normal to add
+					
+					addUV = inputTriangles[whichSet].uv[whichSetVert];
+					
                     inputTriangles[whichSet].glVertices.push(vtxToAdd[0],vtxToAdd[1],vtxToAdd[2]); // put coords in set coord list
                     inputTriangles[whichSet].glNormals.push(normToAdd[0],normToAdd[1],normToAdd[2]); // put normal in set coord list
-                    vec3.max(maxCorner,maxCorner,vtxToAdd); // update world bounding box corner maxima
+                    inputTriangles[whichSet].textureCoords.push(addUV[0], addUV[1]);
+					
+					vec3.max(maxCorner,maxCorner,vtxToAdd); // update world bounding box corner maxima
                     vec3.min(minCorner,minCorner,vtxToAdd); // update world bounding box corner minima
                     vec3.add(inputTriangles[whichSet].center,inputTriangles[whichSet].center,vtxToAdd); // add to ctr sum
+					
                 } // end for vertices in set
                 vec3.scale(inputTriangles[whichSet].center,inputTriangles[whichSet].center,1/numVerts); // avg ctr sum
 
@@ -397,9 +420,14 @@ function loadModels() {
                 vertexBuffers[whichSet] = gl.createBuffer(); // init empty webgl set vertex coord buffer
                 gl.bindBuffer(gl.ARRAY_BUFFER,vertexBuffers[whichSet]); // activate that buffer
                 gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(inputTriangles[whichSet].glVertices),gl.STATIC_DRAW); // data in
-                normalBuffers[whichSet] = gl.createBuffer(); // init empty webgl set normal component buffer
+                
+				normalBuffers[whichSet] = gl.createBuffer(); // init empty webgl set normal component buffer
                 gl.bindBuffer(gl.ARRAY_BUFFER,normalBuffers[whichSet]); // activate that buffer
                 gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(inputTriangles[whichSet].glNormals),gl.STATIC_DRAW); // data in
+				
+				textureBuffers[whichSet] = gl.createBuffer();
+				gl.bindBuffer(gl.ARRAY_BUFFER, textureBuffers[whichSet]);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(inputTriangles[whichSet].textureCoords), gl.STATIC_DRAW);
                
                 // set up the triangle index array, adjusting indices across sets
                 inputTriangles[whichSet].glTriangles = []; // flat index list for webgl
