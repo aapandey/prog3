@@ -32,6 +32,9 @@ var textures = []; // the list to hold all the textures
 var vertexTextureAttribLoc;
 var sUniform;
 
+var alphaUniform;
+var lightModeUniform;
+
 /* shader parameter locations */
 var vPosAttribLoc; // where to put position for vertex shader
 var mMatrixULoc; // where to put model matrix for vertex shader
@@ -46,6 +49,8 @@ var Eye = vec3.clone(defaultEye); // eye position in world space
 var Center = vec3.clone(defaultCenter); // view direction in world space
 var Up = vec3.clone(defaultUp); // view up vector in world space
 var viewDelta = 0; // how much to displace view with each key press
+
+var lightMode = 0;
 
 // ASSIGNMENT HELPER FUNCTIONS
 
@@ -239,6 +244,13 @@ function handleKeyDown(event) {
                 vec3.set(inputEllipsoids[whichTriSet].yAxis,0,1,0);
             } // end for all ellipsoids
             break;
+			
+		case "KeyB":
+			if (event.getModifierState("Shift")){
+				lightMode = lightMode == 0 ? 1 : 0; 
+			}
+			break;
+				
     } // end switch
 } // end handleKeyDown
 
@@ -296,8 +308,8 @@ function loadModels() {
                 console.log("ellipsoid xyz: "+ ellipsoid.x +" "+ ellipsoid.y +" "+ ellipsoid.z);
 				
 				// for the ellipsoids add the u,v for the textures
-				var addUV = [];
-				addUV.push(0, 1);
+				var uvToAdd  = [];
+				uvToAdd .push(0, 1);
                 
                 // make vertices
                 var ellipsoidVertices = [0,-1,0]; // vertices to return, init to south pole
@@ -312,8 +324,9 @@ function loadModels() {
 						// Add u,v for texture location
 						var u = longAngle / (2 * Math.PI);
 						var v = (latAngle + latLimitAngle)/(2 * latLimitAngle);
-						addUV.push(u, v);
+						uvToAdd.push(u, v);
                 } // end for each latitude
+				uvToAdd.push(0,0);
                 ellipsoidVertices.push(0,1,0); // add north pole
                 ellipsoidVertices = ellipsoidVertices.map(function(val,idx) { // position and scale ellipsoid
                     switch (idx % 3) {
@@ -360,7 +373,7 @@ function loadModels() {
                 ellipsoidTriangles.push(ellipsoidVertices.length/3-2,ellipsoidVertices.length/3-1,
 						ellipsoidVertices.length/3-numLongSteps-1); // longitude wrap
             } // end if good number longitude steps
-            return({vertices:ellipsoidVertices, normals:ellipsoidNormals, triangles:ellipsoidTriangles, textures: addUV});
+            return({vertices:ellipsoidVertices, normals:ellipsoidNormals, triangles:ellipsoidTriangles, textures: uvToAdd});
         } // end try
         
         catch(e) {
@@ -568,8 +581,12 @@ function setupShaders() {
 		
 		// The texture.
 		uniform sampler2D u_texture;
+		uniform float uAlpha;
+		uniform int uLightMode;
             
         void main(void) {
+			
+			vec3 lightWeight;
         
             // ambient term
             vec3 ambient = uAmbient * uLightAmbient; 
@@ -585,10 +602,20 @@ function setupShaders() {
             vec3 halfVec = normalize(light+eye);
             float highlight = pow(max(0.0,dot(normal,halfVec)),uShininess);
             vec3 specular = uSpecular*uLightSpecular*highlight; // specular term
+			
+			lightWeight = uLightAmbient + uLightDiffuse*lambert + uLightSpecular*highlight;
             
             // combine to output color
             vec3 colorOut = ambient + diffuse + specular; // no specular yet
-            gl_FragColor = texture2D(u_texture, vec2(v_texcoord.s, v_texcoord.t)); 
+            //gl_FragColor = texture2D(u_texture, vec2(v_texcoord.s, v_texcoord.t)); 
+			
+			vec4 textureColor = texture2D(u_texture, vec2(v_texcoord.s, v_texcoord.t));
+			if(uLightMode == 0){
+				gl_FragColor = vec4(textureColor.rgb * lightWeight, textureColor.a);
+			}
+			else if(uLightMode == 1){
+				gl_FragColor = vec4(textureColor.rgb * colorOut, textureColor.a);
+			}
         }
     `;
     
@@ -643,6 +670,8 @@ function setupShaders() {
                 shininessULoc = gl.getUniformLocation(shaderProgram, "uShininess"); // ptr to shininess
 				
 				sUniform = gl.getUniformLocation(shaderProgram, "u_texture");
+				alphaUniform = gl.getUniformLocation(shaderProgram, "uAlpha");
+				lightModeUniform = gl.getUniformLocation(shaderProgram, "uLightMode");
                 
                 // pass global constants into fragment uniforms
                 gl.uniform3fv(eyePositionULoc,Eye); // pass in the eye's position
@@ -725,6 +754,9 @@ function renderModels() {
         gl.uniform3fv(specularULoc,currSet.material.specular); // pass in the specular reflectivity
         gl.uniform1f(shininessULoc,currSet.material.n); // pass in the specular exponent
         
+		gl.uniform1f(alphaUniform, currSet.material.alpha);
+		gl.uniform1i(lightModeUniform,lightMode);
+		
         // vertex buffer: activate and feed into vertex shader
         gl.bindBuffer(gl.ARRAY_BUFFER,vertexBuffers[whichTriSet]); // activate
         gl.vertexAttribPointer(vPosAttribLoc,3,gl.FLOAT,false,0,0); // feed
@@ -736,7 +768,7 @@ function renderModels() {
 		
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, textures[whichTriSet]);
-		 gl.uniform1i(sUniform, 0);
+		gl.uniform1i(sUniform, 0);
 
         // triangle buffer: activate and render
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,triangleBuffers[whichTriSet]); // activate
@@ -761,6 +793,9 @@ function renderModels() {
         gl.uniform3fv(diffuseULoc,ellipsoid.diffuse); // pass in the diffuse reflectivity
         gl.uniform3fv(specularULoc,ellipsoid.specular); // pass in the specular reflectivity
         gl.uniform1f(shininessULoc,ellipsoid.n); // pass in the specular exponent
+		
+		gl.uniform1f(alphaUniform, ellipsoid.alpha);
+		gl.uniform1i(lightModeUniform,lightMode);
 
         gl.bindBuffer(gl.ARRAY_BUFFER,vertexBuffers[numTriangleSets+whichEllipsoid]); // activate vertex buffer
         gl.vertexAttribPointer(vPosAttribLoc,3,gl.FLOAT,false,0,0); // feed vertex buffer to shader
@@ -785,7 +820,7 @@ function loadTexture(){
 	for (var whichTriSet = 0; whichTriSet < numTriangleSets; whichTriSet++) {
         textures[whichTriSet] = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, textures[whichTriSet]);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 0, 0, 255])); // red
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 255, 255])); // blue
 
         textures[whichTriSet].image = new Image();
         textures[whichTriSet].image.crossOrigin = "Anonymous";
@@ -803,7 +838,7 @@ function loadTexture(){
         var index = numTriangleSets + whichEllipsoid;
         textures[index] = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, textures[index]);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 0, 0, 255])); // red
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 255, 255])); // blue
  
         textures[index].image = new Image();
         textures[index].image.crossOrigin = "Anonymous";
