@@ -3,6 +3,8 @@
 /* assignment specific globals */
 const INPUT_TRIANGLES_URL = "https://ncsucgclass.github.io/prog3/triangles.json"; // triangles file loc
 const INPUT_ELLIPSOIDS_URL = "https://ncsucgclass.github.io/prog3/ellipsoids.json"; // ellipsoids file loc
+const INPUT_TEXTURE_URL = "https://ncsucgclass.github.io/prog3/"; // texture source location
+
 var defaultEye = vec3.fromValues(0.5,0.5,-0.5); // default eye position in world space
 var defaultCenter = vec3.fromValues(0.5,0.5,0.5); // default view direction in world space
 var defaultUp = vec3.fromValues(0,1,0); // default view up vector
@@ -27,8 +29,8 @@ var triangleBuffers = []; // lists of indices into vertexBuffers by set, in trip
 var textureBuffers = []; // this contains texture in sets
 var textures = []; // the list to hold all the textures
 
-//var vertexTextureAttribLoc
-//var sampleUniform
+var vertexTextureAttribLoc;
+var sUniform;
 
 /* shader parameter locations */
 var vPosAttribLoc; // where to put position for vertex shader
@@ -302,7 +304,7 @@ function loadModels() {
                 var angleIncr = (Math.PI + Math.PI) / numLongSteps; // angular increment 
                 var latLimitAngle = angleIncr * (Math.floor(numLongSteps/4) - 1); // start/end lat angle
                 var latRadius, latY; // radius and Y at current latitude
-                for (var latAngle =- latLimitAngle; latAngle <= latLimitAngle; latAngle += angleIncr) {
+                for (var latAngle = -latLimitAngle; latAngle <= latLimitAngle; latAngle += angleIncr) {
                     latRadius = Math.cos(latAngle); // radius of current latitude
                     latY = Math.sin(latAngle); // height at current latitude
                     for (var longAngle = 0 ; longAngle < 2 * Math.PI ; longAngle += angleIncr) // for each long
@@ -356,9 +358,9 @@ function loadModels() {
                 for (var whichLong = llVertex + 2 ; whichLong < llVertex + numLongSteps + 1; whichLong++) // north pole
                     ellipsoidTriangles.push(whichLong,ellipsoidVertices.length/3-1,whichLong+1);
                 ellipsoidTriangles.push(ellipsoidVertices.length/3-2,ellipsoidVertices.length/3-1,
-                                        ellipsoidVertices.length/3-numLongSteps-1); // longitude wrap
+						ellipsoidVertices.length/3-numLongSteps-1); // longitude wrap
             } // end if good number longitude steps
-            return({vertices:ellipsoidVertices, normals:ellipsoidNormals, triangles:ellipsoidTriangles});
+            return({vertices:ellipsoidVertices, normals:ellipsoidNormals, triangles:ellipsoidTriangles, textures: addUV});
         } // end try
         
         catch(e) {
@@ -399,15 +401,15 @@ function loadModels() {
 				inputTriangles[whichSet].textureCoords = []; // flat texture u,v list for webgl
 				
                 var numVerts = inputTriangles[whichSet].vertices.length; // num vertices in tri set
-                for (whichSetVert=0; whichSetVert<numVerts; whichSetVert++) { // verts in set
+                for (whichSetVert = 0; whichSetVert < numVerts; whichSetVert++) { // verts in set
                     vtxToAdd = inputTriangles[whichSet].vertices[whichSetVert]; // get vertex to add
                     normToAdd = inputTriangles[whichSet].normals[whichSetVert]; // get normal to add
 					
-					addUV = inputTriangles[whichSet].uv[whichSetVert];
+					uvToAdd = inputTriangles[whichSet].uvs[whichSetVert];
 					
                     inputTriangles[whichSet].glVertices.push(vtxToAdd[0],vtxToAdd[1],vtxToAdd[2]); // put coords in set coord list
                     inputTriangles[whichSet].glNormals.push(normToAdd[0],normToAdd[1],normToAdd[2]); // put normal in set coord list
-                    inputTriangles[whichSet].textureCoords.push(addUV[0], addUV[1]);
+                    inputTriangles[whichSet].textureCoords.push(uvToAdd[0], uvToAdd[1]);
 					
 					vec3.max(maxCorner,maxCorner,vtxToAdd); // update world bounding box corner maxima
                     vec3.min(minCorner,minCorner,vtxToAdd); // update world bounding box corner minima
@@ -432,6 +434,7 @@ function loadModels() {
                 // set up the triangle index array, adjusting indices across sets
                 inputTriangles[whichSet].glTriangles = []; // flat index list for webgl
                 triSetSizes[whichSet] = inputTriangles[whichSet].triangles.length; // number of tris in this set
+				
                 for (whichSetTri = 0; whichSetTri < triSetSizes[whichSet] ; whichSetTri++) {
                     triToAdd = inputTriangles[whichSet].triangles[whichSetTri]; // get tri to add
                     inputTriangles[whichSet].glTriangles.push(triToAdd[0],triToAdd[1],triToAdd[2]); // put indices in set list
@@ -480,6 +483,11 @@ function loadModels() {
                     normalBuffers.push(gl.createBuffer()); // init empty webgl ellipsoid vertex normal buffer
                     gl.bindBuffer(gl.ARRAY_BUFFER,normalBuffers[normalBuffers.length-1]); // activate that buffer
                     gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(ellipsoidModel.normals),gl.STATIC_DRAW); // data in
+					
+					textureBuffers.push(gl.createBuffer());
+					//gl.bindBuffer(gl.ARRAY_BUFFER, textureBuffers[whichSet]);
+					gl.bindBuffer(gl.ARRAY_BUFFER, textureBuffers[textureBuffers.length - 1]);
+                    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ellipsoidModel.textures), gl.STATIC_DRAW);
         
                     triSetSizes.push(ellipsoidModel.triangles.length);
     
@@ -506,12 +514,16 @@ function setupShaders() {
     var vShaderCode = `
         attribute vec3 aVertexPosition; // vertex position
         attribute vec3 aVertexNormal; // vertex normal
+		
+		attribute vec2 a_texcoord;
         
         uniform mat4 umMatrix; // the model matrix
         uniform mat4 upvmMatrix; // the project view model matrix
         
         varying vec3 vWorldPos; // interpolated world position of vertex
         varying vec3 vVertexNormal; // interpolated normal for frag shader
+		
+		varying vec2 v_texcoord;
 
         void main(void) {
             
@@ -523,6 +535,8 @@ function setupShaders() {
             // vertex normal (assume no non-uniform scale)
             vec4 vWorldNormal4 = umMatrix * vec4(aVertexNormal, 0.0);
             vVertexNormal = normalize(vec3(vWorldNormal4.x, vWorldNormal4.y, vWorldNormal4.z)); 
+			
+			v_texcoord = a_texcoord;
         }
     `;
     
@@ -548,6 +562,12 @@ function setupShaders() {
         // geometry properties
         varying vec3 vWorldPos; // world xyz of fragment
         varying vec3 vVertexNormal; // normal of fragment
+		
+		//Passed in from the vertex shader
+		varying vec2 v_texcoord;
+		
+		// The texture.
+		uniform sampler2D u_texture;
             
         void main(void) {
         
@@ -568,7 +588,7 @@ function setupShaders() {
             
             // combine to output color
             vec3 colorOut = ambient + diffuse + specular; // no specular yet
-            gl_FragColor = vec4(colorOut, 1.0); 
+            gl_FragColor = texture2D(u_texture, vec2(v_texcoord.s, v_texcoord.t)); 
         }
     `;
     
@@ -603,6 +623,9 @@ function setupShaders() {
                 gl.enableVertexAttribArray(vPosAttribLoc); // connect attrib to array
                 vNormAttribLoc = gl.getAttribLocation(shaderProgram, "aVertexNormal"); // ptr to vertex normal attrib
                 gl.enableVertexAttribArray(vNormAttribLoc); // connect attrib to array
+				
+				vertexTextureAttribLoc = gl.getAttribLocation(shaderProgram, "a_texcoord");
+				gl.enableVertexAttribArray(vertexTextureAttribLoc);
                 
                 // locate vertex uniforms
                 mMatrixULoc = gl.getUniformLocation(shaderProgram, "umMatrix"); // ptr to mmat
@@ -618,6 +641,8 @@ function setupShaders() {
                 diffuseULoc = gl.getUniformLocation(shaderProgram, "uDiffuse"); // ptr to diffuse
                 specularULoc = gl.getUniformLocation(shaderProgram, "uSpecular"); // ptr to specular
                 shininessULoc = gl.getUniformLocation(shaderProgram, "uShininess"); // ptr to shininess
+				
+				sUniform = gl.getUniformLocation(shaderProgram, "u_texture");
                 
                 // pass global constants into fragment uniforms
                 gl.uniform3fv(eyePositionULoc,Eye); // pass in the eye's position
@@ -705,6 +730,13 @@ function renderModels() {
         gl.vertexAttribPointer(vPosAttribLoc,3,gl.FLOAT,false,0,0); // feed
         gl.bindBuffer(gl.ARRAY_BUFFER,normalBuffers[whichTriSet]); // activate
         gl.vertexAttribPointer(vNormAttribLoc,3,gl.FLOAT,false,0,0); // feed
+		
+		gl.bindBuffer(gl.ARRAY_BUFFER, textureBuffers[whichTriSet]);
+		gl.vertexAttribPointer(vertexTextureAttribLoc, 2 , gl.float, false, 0, 0);
+		
+		gl.activeTexture(gl.TEXTURE0);
+		gl.bindTexture(gl.TEXTURE_2D, textures[whichTriSet]);
+		 gl.uniform1i(sUniform, 0);
 
         // triangle buffer: activate and render
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,triangleBuffers[whichTriSet]); // activate
@@ -734,12 +766,85 @@ function renderModels() {
         gl.vertexAttribPointer(vPosAttribLoc,3,gl.FLOAT,false,0,0); // feed vertex buffer to shader
         gl.bindBuffer(gl.ARRAY_BUFFER,normalBuffers[numTriangleSets+whichEllipsoid]); // activate normal buffer
         gl.vertexAttribPointer(vNormAttribLoc,3,gl.FLOAT,false,0,0); // feed normal buffer to shader
+		
+		gl.bindBuffer(gl.ARRAY_BUFFER, textureBuffers[numTriangleSets + whichEllipsoid]);
+		gl.vertexAttribPointer(vertexTextureAttribLoc, 2, gl.FLOAT, false, 0, 0);
+		
+		gl.activeTexture(gl.TEXTURE0);
+		gl.bindTexture(gl.TEXTURE_2D, textures[numTriangleSets + whichEllipsoid]);
+		gl.uniform1i(sUniform, 0);
+		
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,triangleBuffers[numTriangleSets+whichEllipsoid]); // activate tri buffer
         
         // draw a transformed instance of the ellipsoid
         gl.drawElements(gl.TRIANGLES,triSetSizes[numTriangleSets+whichEllipsoid],gl.UNSIGNED_SHORT,0); // render
     } // end for each ellipsoid
 } // end render model
+
+function loadTexture(){
+	for (var whichTriSet = 0; whichTriSet < numTriangleSets; whichTriSet++) {
+        textures[whichTriSet] = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, textures[whichTriSet]);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 0, 0, 255])); // red
+
+        textures[whichTriSet].image = new Image();
+        textures[whichTriSet].image.crossOrigin = "Anonymous";
+        (function (whichTriSet) {
+            textures[whichTriSet].image.onload = function () {
+                console.log("whichTriset" + whichTriSet);
+                handleLoadedTexture(textures[whichTriSet]);
+            }
+        })(whichTriSet);
+ 
+        textures[whichTriSet].image.src = INPUT_TEXTURE_URL + inputTriangles[whichTriSet].material.texture;
+    }
+ 
+    for (var whichEllipsoid = 0; whichEllipsoid < numEllipsoids; whichEllipsoid++) {
+        var index = numTriangleSets + whichEllipsoid;
+        textures[index] = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, textures[index]);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 0, 0, 255])); // red
+ 
+        textures[index].image = new Image();
+        textures[index].image.crossOrigin = "Anonymous";
+ 
+        (function (index) {
+            textures[index].image.onload = function () {
+                console.log("whichEllpset" + index);
+                handleLoadedTexture(textures[index]);
+            }
+        })(index);
+        textures[index].image.src = INPUT_TEXTURE_URL + inputEllipsoids[whichEllipsoid].texture;
+     }
+}
+
+function isPowerOf2(value) {
+    return (value & (value - 1)) == 0;
+}
+
+
+function handleLoadedTexture(texture) {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+	/* if (isPowerOf2(texture.image.width) && isPowerOf2(texture.image.height)) {
+       // Yes, it's a power of 2. Generate mips.
+       gl.generateMipmap(gl.TEXTURE_2D);
+    } else {
+       // No, it's not a power of 2. Turn of mips and set
+       // wrapping to clamp to edge
+       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    } */
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+	//gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+	//gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+	//gl.bindTexture(gl.TEXTURE_2D, null);
+}
 
 
 /* MAIN -- HERE is where execution begins after window load */
@@ -749,6 +854,7 @@ function main() {
   setupWebGL(); // set up the webGL environment
   loadModels(); // load in the models from tri file
   setupShaders(); // setup the webGL shaders
+  loadTexture(); // setup the textures
   renderModels(); // draw the triangles using webGL
   
 } // end main
