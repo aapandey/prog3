@@ -42,6 +42,8 @@ var lightModeUniform;
 
 /* shader parameter locations */
 var vPosAttribLoc; // where to put position for vertex shader
+var vNormAttribLoc; // where to put position for normal shader
+var vTextAttribLoc; 
 var mMatrixULoc; // where to put model matrix for vertex shader
 var pvmMatrixULoc; // where to put project model view matrix for vertex shader
 var ambientULoc; // where to put ambient reflecivity for fragment shader
@@ -886,7 +888,7 @@ function renderModels() {
 
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, textures[whichTriSet]);
-            gl.uniform1i(samplerUniform, 0);
+            gl.uniform1i(sUniform, 0);
 
             // triangle buffer: activate and render
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, triangleBuffers[whichTriSet]); // activate
@@ -931,7 +933,7 @@ function renderModels() {
 
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, textures[numTriangleSets + whichEllipsoid]);
-            gl.uniform1i(samplerUniform, 0);
+            gl.uniform1i(sUniform, 0);
 
 
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, triangleBuffers[numTriangleSets + whichEllipsoid]); // activate tri buffer
