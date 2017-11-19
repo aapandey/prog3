@@ -1,3 +1,8 @@
+//Abhishek Pandey
+//CG Assignment 3, 2017
+/*The following code has been inspired from http://learningwebgl.com/blog/?p=507 ,
+ http://learningwebgl.com/blog/?p=859 ,
+ https://webglfundamentals.org/webgl/lessons/webgl-2-textures.html*/
 /* GLOBAL CONSTANTS AND VARIABLES */
 
 /* assignment specific globals */
