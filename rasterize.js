@@ -24,7 +24,7 @@ var numEllipsoids = 0; // how many ellipsoids in the input scene
 var vertexBuffers = []; // this contains vertex coordinate lists by set, in triples
 var normalBuffers = []; // this contains normal component lists by set, in triples
 var triSetSizes = []; // this contains the size of each triangle set
-var triangleBuffers; // lists of indices into vertexBuffers by set, in triples
+var triangleBuffers = []; // lists of indices into vertexBuffers by set, in triples
 
 /* var opaqueTriangles = [];
 var transTriangles = []; */
@@ -44,7 +44,7 @@ var sortedIndex = [];
 
 /* shader parameter locations */
 var vPosAttribLoc; // where to put position for vertex shader
-//var vNormAttribLoc; // where to put position for normal shader
+var vNormAttribLoc; // where to put position for normal shader
 var vTextAttribLoc;
 var samplerUniform;
 var alphaUniform;
@@ -602,7 +602,7 @@ function loadModels() {
                     }
 
                     // make the ellipsoid model
-                    /* ellipsoidModel = makeEllipsoid(ellipsoid,32);
+                    ellipsoidModel = makeEllipsoid(ellipsoid,32);
     
                     // send the ellipsoid vertex coords and normals to webGL
                     vertexBuffers.push(gl.createBuffer()); // init empty webgl ellipsoid vertex coord buffer
@@ -622,9 +622,9 @@ function loadModels() {
                     // send the triangle indices to webGL
                     triangleBuffers.push(gl.createBuffer()); // init empty triangle index buffer
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, triangleBuffers[triangleBuffers.length-1]); // activate that buffer
-                    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(ellipsoidModel.triangles),gl.STATIC_DRAW); // data in */
+                    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(ellipsoidModel.triangles),gl.STATIC_DRAW); // data in
 					
-					makeEllipsoid(ellipsoid, 32, whichEllipsoid + numTriangleSets);
+					//makeEllipsoid(ellipsoid, 32, whichEllipsoid + numTriangleSets);
                 } // end for each ellipsoid
                 
                 viewDelta = vec3.length(vec3.subtract(temp,maxCorner,minCorner)) / 100; // set global
@@ -639,21 +639,21 @@ function loadModels() {
 
 // setup the webGL shaders
 function setupShaders() {
-    
+
     // define vertex shader in essl using es6 template strings
     var vShaderCode = `
         attribute vec3 aVertexPosition; // vertex position
         attribute vec3 aVertexNormal; // vertex normal
-		
-		attribute vec2 a_texcoord;
+        
+        attribute vec2 aTextureCoord;
         
         uniform mat4 umMatrix; // the model matrix
         uniform mat4 upvmMatrix; // the project view model matrix
         
         varying vec3 vWorldPos; // interpolated world position of vertex
         varying vec3 vVertexNormal; // interpolated normal for frag shader
-		
-		varying vec2 v_texcoord;
+        
+        varying vec2 vTextureCoord;
 
         void main(void) {
             
@@ -664,12 +664,12 @@ function setupShaders() {
 
             // vertex normal (assume no non-uniform scale)
             vec4 vWorldNormal4 = umMatrix * vec4(aVertexNormal, 0.0);
-            vVertexNormal = normalize(vec3(vWorldNormal4.x, vWorldNormal4.y, vWorldNormal4.z)); 
-			
-			v_texcoord = a_texcoord;
+            vVertexNormal = normalize(vec3(vWorldNormal4.x,vWorldNormal4.y,vWorldNormal4.z)); 
+            
+            vTextureCoord = aTextureCoord;
         }
     `;
-    
+
     // define fragment shader in essl using es6 template strings
     var fShaderCode = `
         precision mediump float; // set float to medium precision
@@ -692,66 +692,59 @@ function setupShaders() {
         // geometry properties
         varying vec3 vWorldPos; // world xyz of fragment
         varying vec3 vVertexNormal; // normal of fragment
-		
-		//Passed in from the vertex shader
-		varying vec2 v_texcoord;
-		
-		// The texture.
-		uniform sampler2D u_texture;
-		uniform float uAlpha;
-		uniform int uLightMode;
+        
+        varying vec2 vTextureCoord;
+        uniform float uAlpha;
+
+        uniform sampler2D uSampler;
+        uniform int uLightMode;
             
         void main(void) {
-			
-			vec3 lightWeight;
+            vec3 lightWeighting;
         
             // ambient term
-            vec3 ambient = uAmbient * uLightAmbient; 
+            vec3 ambient = uAmbient*uLightAmbient; 
             
             // diffuse term
             vec3 normal = normalize(vVertexNormal); 
             vec3 light = normalize(uLightPosition - vWorldPos);
             float lambert = max(0.0,dot(normal,light));
-            vec3 diffuse = uDiffuse * uLightDiffuse * lambert; // diffuse term
-            
+            vec3 diffuse = uDiffuse*uLightDiffuse*lambert; // diffuse term
+                      
             // specular term
             vec3 eye = normalize(uEyePosition - vWorldPos);
             vec3 halfVec = normalize(light+eye);
             float highlight = pow(max(0.0,dot(normal,halfVec)),uShininess);
             vec3 specular = uSpecular*uLightSpecular*highlight; // specular term
-			
-			lightWeight = uLightAmbient + uLightDiffuse*lambert + uLightSpecular*highlight;
+            
+            lightWeighting = uLightAmbient + uLightDiffuse*lambert + uLightSpecular*highlight;
             
             // combine to output color
             vec3 colorOut = ambient + diffuse + specular; // no specular yet
-            //gl_FragColor = texture2D(u_texture, vec2(v_texcoord.s, v_texcoord.t)); 
-			
-			vec4 textureColor = texture2D(u_texture, vec2(v_texcoord.s, v_texcoord.t));
-			if(uLightMode == 0){
-				//gl_FragColor = vec4(textureColor.rgb * lightWeight, textureColor.a);
-				gl_FragColor = vec4(textureColor.rgb * lightWeight, textureColor.a * uAlpha)
-			}
-			else if(uLightMode == 1){
-				//gl_FragColor = vec4(textureColor.rgb * colorOut, textureColor.a);
-				gl_FragColor = vec4(textureColor.rgb * colorOut, textureColor.a * uAlpha);
-			}
+            vec4 textureColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
+            if(uLightMode == 0){
+                gl_FragColor = vec4(textureColor.rgb * lightWeighting, textureColor.a * uAlpha); 
+            }
+            if(uLightMode == 1){
+                gl_FragColor = vec4(textureColor.rgb * colorOut, textureColor.a * uAlpha); 
+            }
         }
     `;
-    
+
     try {
         var fShader = gl.createShader(gl.FRAGMENT_SHADER); // create frag shader
-        gl.shaderSource(fShader,fShaderCode); // attach code to shader
+        gl.shaderSource(fShader, fShaderCode); // attach code to shader
         gl.compileShader(fShader); // compile the code for gpu execution
 
         var vShader = gl.createShader(gl.VERTEX_SHADER); // create vertex shader
-        gl.shaderSource(vShader,vShaderCode); // attach code to shader
+        gl.shaderSource(vShader, vShaderCode); // attach code to shader
         gl.compileShader(vShader); // compile the code for gpu execution
-            
+
         if (!gl.getShaderParameter(fShader, gl.COMPILE_STATUS)) { // bad frag shader compile
-            throw "error during fragment shader compile: " + gl.getShaderInfoLog(fShader);  
+            throw "error during fragment shader compile: " + gl.getShaderInfoLog(fShader);
             gl.deleteShader(fShader);
         } else if (!gl.getShaderParameter(vShader, gl.COMPILE_STATUS)) { // bad vertex shader compile
-            throw "error during vertex shader compile: " + gl.getShaderInfoLog(vShader);  
+            throw "error during vertex shader compile: " + gl.getShaderInfoLog(vShader);
             gl.deleteShader(vShader);
         } else { // no compile errors
             var shaderProgram = gl.createProgram(); // create the single shader program
@@ -763,20 +756,20 @@ function setupShaders() {
                 throw "error during shader program linking: " + gl.getProgramInfoLog(shaderProgram);
             } else { // no shader program link errors
                 gl.useProgram(shaderProgram); // activate shader program (frag and vert)
-                
+
                 // locate and enable vertex attributes
                 vPosAttribLoc = gl.getAttribLocation(shaderProgram, "aVertexPosition"); // ptr to vertex pos attrib
                 gl.enableVertexAttribArray(vPosAttribLoc); // connect attrib to array
                 vNormAttribLoc = gl.getAttribLocation(shaderProgram, "aVertexNormal"); // ptr to vertex normal attrib
                 gl.enableVertexAttribArray(vNormAttribLoc); // connect attrib to array
-				
-				vertexTextureAttribLoc = gl.getAttribLocation(shaderProgram, "a_texcoord");
-				gl.enableVertexAttribArray(vertexTextureAttribLoc);
-                
+
+                vTextAttribLoc = gl.getAttribLocation(shaderProgram, "aTextureCoord");
+                gl.enableVertexAttribArray(vTextAttribLoc);
+
                 // locate vertex uniforms
                 mMatrixULoc = gl.getUniformLocation(shaderProgram, "umMatrix"); // ptr to mmat
                 pvmMatrixULoc = gl.getUniformLocation(shaderProgram, "upvmMatrix"); // ptr to pvmmat
-                
+
                 // locate fragment uniforms
                 var eyePositionULoc = gl.getUniformLocation(shaderProgram, "uEyePosition"); // ptr to eye position
                 var lightAmbientULoc = gl.getUniformLocation(shaderProgram, "uLightAmbient"); // ptr to light ambient
@@ -787,22 +780,22 @@ function setupShaders() {
                 diffuseULoc = gl.getUniformLocation(shaderProgram, "uDiffuse"); // ptr to diffuse
                 specularULoc = gl.getUniformLocation(shaderProgram, "uSpecular"); // ptr to specular
                 shininessULoc = gl.getUniformLocation(shaderProgram, "uShininess"); // ptr to shininess
-				
-				sUniform = gl.getUniformLocation(shaderProgram, "u_texture");
-				alphaUniform = gl.getUniformLocation(shaderProgram, "uAlpha");
-				lightModeUniform = gl.getUniformLocation(shaderProgram, "uLightMode");
-                
+
+                samplerUniform = gl.getUniformLocation(shaderProgram, "uSampler");
+                alphaUniform = gl.getUniformLocation(shaderProgram, "uAlpha");
+                lightModeUniform = gl.getUniformLocation(shaderProgram, "uLightMode");
+
                 // pass global constants into fragment uniforms
-                gl.uniform3fv(eyePositionULoc,Eye); // pass in the eye's position
-                gl.uniform3fv(lightAmbientULoc,lightAmbient); // pass in the light's ambient emission
-                gl.uniform3fv(lightDiffuseULoc,lightDiffuse); // pass in the light's diffuse emission
-                gl.uniform3fv(lightSpecularULoc,lightSpecular); // pass in the light's specular emission
-                gl.uniform3fv(lightPositionULoc,lightPosition); // pass in the light's position
+                gl.uniform3fv(eyePositionULoc, Eye); // pass in the eye's position
+                gl.uniform3fv(lightAmbientULoc, lightAmbient); // pass in the light's ambient emission
+                gl.uniform3fv(lightDiffuseULoc, lightDiffuse); // pass in the light's diffuse emission
+                gl.uniform3fv(lightSpecularULoc, lightSpecular); // pass in the light's specular emission
+                gl.uniform3fv(lightPositionULoc, lightPosition); // pass in the light's position
             } // end if no shader program link errors
         } // end if no compile errors
     } // end try 
-    
-    catch(e) {
+
+    catch (e) {
         console.log(e);
     } // end catch
 } // end setup shaders
@@ -862,25 +855,25 @@ function renderModels() {
         currSet = inputTriangles[whichTriSet]; */
 	function renderOpaque(){
 		
-		gl.disable(gl.BLEND);
+		/* gl.disable(gl.BLEND);
         gl.enable(gl.DEPTH_TEST);
-        gl.depthMask(true);
+        gl.depthMask(true); */
 		
 		var currSet; // the tri set and its material properties
-		//for (var whichTriSet of triOpaqueIndex){
-		for (var triangle of opaqueTriangles){
+		for (var whichTriSet of triOpaqueIndex){
+		//for (var triangle of opaqueTriangles){
 			
-			//currSet = inputTriangles[whichTriSet];
+			currSet = inputTriangles[whichTriSet];
 			
-			if (triangle.whichset < numTriangleSets) {
+			/* if (triangle.whichset < numTriangleSets) {
                 currSet = inputTriangles[triangle.whichset];
             } else {
                 currSet = inputEllipsoids[triangle.whichset - numTriangleSets];
-            }
+            } */
 			
-			/* gl.disable(gl.BLEND);
+			gl.disable(gl.BLEND);
             gl.enable(gl.DEPTH_TEST);
-            gl.depthMask(true); */
+            gl.depthMask(true);
         
 			// make model transform, add to view project
 			makeModelTransform(currSet);
@@ -889,12 +882,12 @@ function renderModels() {
 			gl.uniformMatrix4fv(pvmMatrixULoc, false, pvmMatrix); // pass in the hpvm matrix
         
 			// reflectivity: feed to the fragment shader
-			/* gl.uniform3fv(ambientULoc,currSet.material.ambient); // pass in the ambient reflectivity
+			gl.uniform3fv(ambientULoc,currSet.material.ambient); // pass in the ambient reflectivity
 			gl.uniform3fv(diffuseULoc,currSet.material.diffuse); // pass in the diffuse reflectivity
 			gl.uniform3fv(specularULoc,currSet.material.specular); // pass in the specular reflectivity
-			gl.uniform1f(shininessULoc,currSet.material.n); // pass in the specular exponent */
+			gl.uniform1f(shininessULoc,currSet.material.n); // pass in the specular exponent
 			
-			if (triangle.whichset < numTriangleSets) {
+			/* if (triangle.whichset < numTriangleSets) {
                 // reflectivity: feed to the fragment shader
                 gl.uniform3fv(ambientULoc, currSet.material.ambient); // pass in the ambient reflectivity
                 gl.uniform3fv(diffuseULoc, currSet.material.diffuse); // pass in the diffuse reflectivity
@@ -908,48 +901,48 @@ function renderModels() {
                 gl.uniform3fv(specularULoc, currSet.specular); // pass in the specular reflectivity
                 gl.uniform1f(shininessULoc, currSet.n); // pass in the specular exponent
                 gl.uniform1f(alphaUniform, currSet.alpha);
-            }
+            } */
         
-			//gl.uniform1f(alphaUniform, currSet.material.alpha);
+			gl.uniform1f(alphaUniform, currSet.material.alpha);
 			gl.uniform1i(lightModeUniform,lightMode);
 		
 			// vertex buffer: activate and feed into vertex shader
-			gl.bindBuffer(gl.ARRAY_BUFFER,vertexBuffers[triangle.bufferIndex]); // activate
+			gl.bindBuffer(gl.ARRAY_BUFFER,vertexBuffers[whichTriSet]); // activate
 			gl.vertexAttribPointer(vPosAttribLoc,3,gl.FLOAT,false,0,0); // feed
-			gl.bindBuffer(gl.ARRAY_BUFFER,normalBuffers[triangle.bufferIndex]); // activate
+			gl.bindBuffer(gl.ARRAY_BUFFER,normalBuffers[whichTriSet]); // activate
 			gl.vertexAttribPointer(vNormAttribLoc,3,gl.FLOAT,false,0,0); // feed
 		
-			gl.bindBuffer(gl.ARRAY_BUFFER, textureBuffers[triangle.bufferIndex]);
-			gl.vertexAttribPointer(vertexTextureAttribLoc, 2 , gl.float, false, 0, 0);
+			gl.bindBuffer(gl.ARRAY_BUFFER, textureBuffers[whichTriSet]);
+			gl.vertexAttribPointer(vTextAttribLoc, 2 , gl.float, false, 0, 0);
 		
 			gl.activeTexture(gl.TEXTURE0);
-			gl.bindTexture(gl.TEXTURE_2D, textures[triangle.whichSet]);
-			gl.uniform1i(sUniform, 0);
+			gl.bindTexture(gl.TEXTURE_2D, textures[whichTriSet]);
+			gl.uniform1i(samplerUniform, 0);
 
 			// triangle buffer: activate and render
-			//gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,triangleBuffers[whichTriSet]); // activate
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,triangleBuffers[whichTriSet]); // activate
 			
-			//gl.drawElements(gl.TRIANGLES,3*triSetSizes[whichTriSet],gl.UNSIGNED_SHORT,0); // render
+			gl.drawElements(gl.TRIANGLES,3*triSetSizes[whichTriSet],gl.UNSIGNED_SHORT,0); // render
         
-		/* } // end for each triangle set
+		} // end for each triangle set
     
 		// render each ellipsoid
 		var ellipsoid, instanceTransform = mat4.create(); // the current ellipsoid and material
     
 		//for (var whichEllipsoid = 0; whichEllipsoid < numEllipsoids; whichEllipsoid++) {
 		for (var whichEllipsoid of EllipOpaqueIndex){
-			ellipsoid = inputEllipsoids[whichEllipsoid]; */
+			ellipsoid = inputEllipsoids[whichEllipsoid];
 			
-			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,triangleBuffers); // activate
+			//gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,triangleBuffers); // activate
 			
-			/* gl.disable(gl.BLEND);
+			gl.disable(gl.BLEND);
             gl.enable(gl.DEPTH_TEST);
-            gl.depthMask(true); */
+            gl.depthMask(true);
 			
-			gl.drawElements(gl.TRIANGLES,3,gl.UNSIGNED_SHORT,0); // render
+			//gl.drawElements(gl.TRIANGLES,3,gl.UNSIGNED_SHORT,0); // render
         
 			// define model transform, premult with pvmMatrix, feed to vertex shader
-			/* makeModelTransform(ellipsoid);
+			makeModelTransform(ellipsoid);
 			pvmMatrix = mat4.multiply(pvmMatrix,pvMatrix,mMatrix); // premultiply with pv matrix
 			gl.uniformMatrix4fv(mMatrixULoc, false, mMatrix); // pass in model matrix
 			gl.uniformMatrix4fv(pvmMatrixULoc, false, pvmMatrix); // pass in project view model matrix
@@ -969,29 +962,29 @@ function renderModels() {
 			gl.vertexAttribPointer(vNormAttribLoc,3,gl.FLOAT,false,0,0); // feed normal buffer to shader
 		
 			gl.bindBuffer(gl.ARRAY_BUFFER, textureBuffers[numTriangleSets + whichEllipsoid]);
-			gl.vertexAttribPointer(vertexTextureAttribLoc, 2, gl.FLOAT, false, 0, 0);
+			gl.vertexAttribPointer(vTextAttribLoc, 2, gl.FLOAT, false, 0, 0);
 		
 			gl.activeTexture(gl.TEXTURE0);
 			gl.bindTexture(gl.TEXTURE_2D, textures[numTriangleSets + whichEllipsoid]);
-			gl.uniform1i(sUniform, 0);
+			gl.uniform1i(samplerUniform, 0);
 		
 			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,triangleBuffers[numTriangleSets+whichEllipsoid]); // activate tri buffer
         
 			// draw a transformed instance of the ellipsoid
 			gl.drawElements(gl.TRIANGLES,triSetSizes[numTriangleSets + whichEllipsoid],gl.UNSIGNED_SHORT,0); // render
-		} // end for each ellipsoid */
+		} // end for each ellipsoid
 	
 	}
 	
-	function renderTransparent() {
+	/* function renderTransparent() {
 		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         gl.enable(gl.BLEND);
         gl.depthMask(false);
         gl.disable(gl.DEPTH_TEST);
 		
         var currSet; // the tri set and its material properties
-        /* for (var whichTriSet of triTransIndex) {
-            currSet = inputTriangles[whichTriSet]; */
+        for (var whichTriSet of triTransIndex) {
+            currSet = inputTriangles[whichTriSet];
 		for (var triangle of transTriangles) {
 			if (triangle.whichset < numTriangleSets) {
                 currSet = inputTriangles[triangle.whichset];
@@ -1000,10 +993,10 @@ function renderModels() {
                 currSet = inputEllipsoids[triangle.whichset - numTriangleSets];
             }
 
-            /* gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
             gl.enable(gl.BLEND);
             gl.depthMask(false);
-            gl.disable(gl.DEPTH_TEST); */
+            gl.disable(gl.DEPTH_TEST);
             // make model transform, add to view project
             makeModelTransform(currSet);
             mat4.multiply(pvmMatrix, pvMatrix, mMatrix); // project * view * model
@@ -1082,6 +1075,116 @@ function renderModels() {
             // draw a transformed instance of the ellipsoid
             gl.drawElements(gl.TRIANGLES, triSetSizes[numTriangleSets + whichEllipsoid], gl.UNSIGNED_SHORT, 0); // render
         } // end for each ellipsoid
+    } */
+	
+	function renderTransparent() {
+        var currSet; // the tri set and its material properties
+        for (var whichTriSet of triTransIndex) {
+            currSet = inputTriangles[whichTriSet];
+            makeModelTransform(currSet);
+
+            var center = currSet.center;
+            var center4 = vec4.fromValues(center[0], center[1], center[2], 1.0);
+            mat4.multiply(center4, mMatrix, center4);
+            var depth = getDepth(center4[2]);
+            sortedIndex.push({depth: depth, index: whichTriSet});
+
+        }
+
+        var ellipsoid, instanceTransform = mat4.create(); // the current ellipsoid and material
+
+        for (var whichEllipsoid of EllipTransIndex) {
+            ellipsoid = inputEllipsoids[whichEllipsoid];
+            makeModelTransform(ellipsoid);
+
+            var center = ellipsoid.center;
+            var center4 = vec4.fromValues(center[0], center[1], center[2], 1.0);
+            mat4.multiply(center4, mMatrix, center4);
+            var depth = getDepth(center4[2]);
+            sortedIndex.push({depth: depth, index: whichEllipsoid + numTriangleSets});
+        }
+
+        sortedIndex.sort(function (x, y) {
+            return y.depth - x.depth;
+        })
+
+        for (var item of sortedIndex) {
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            gl.enable(gl.BLEND);
+            gl.depthMask(false);
+            gl.disable(gl.DEPTH_TEST);
+            if (item.index < numTriangleSets) {
+                var index = item.index;
+                currSet = inputTriangles[item.index];
+                makeModelTransform(currSet);
+                mat4.multiply(pvmMatrix, pvMatrix, mMatrix); // project * view * model
+                gl.uniformMatrix4fv(mMatrixULoc, false, mMatrix); // pass in the m matrix
+                gl.uniformMatrix4fv(pvmMatrixULoc, false, pvmMatrix); // pass in the hpvm matrix
+
+                // reflectivity: feed to the fragment shader
+                gl.uniform3fv(ambientULoc, currSet.material.ambient); // pass in the ambient reflectivity
+                gl.uniform3fv(diffuseULoc, currSet.material.diffuse); // pass in the diffuse reflectivity
+                gl.uniform3fv(specularULoc, currSet.material.specular); // pass in the specular reflectivity
+                gl.uniform1f(shininessULoc, currSet.material.n); // pass in the specular exponent
+
+                gl.uniform1f(alphaUniform, currSet.material.alpha);
+                gl.uniform1i(lightModeUniform, lightMode);
+
+                // vertex buffer: activate and feed into vertex shader
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffers[index]); // activate
+                gl.vertexAttribPointer(vPosAttribLoc, 3, gl.FLOAT, false, 0, 0); // feed
+                gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffers[index]); // activate
+                gl.vertexAttribPointer(vNormAttribLoc, 3, gl.FLOAT, false, 0, 0); // feed
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, textureBuffers[index]);
+                gl.vertexAttribPointer(vTextAttribLoc, 2, gl.FLOAT, false, 0, 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, textures[index]);
+                gl.uniform1i(samplerUniform, 0);
+
+                // triangle buffer: activate and render
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, triangleBuffers[index]); // activate
+
+                gl.drawElements(gl.TRIANGLES, 3 * triSetSizes[index], gl.UNSIGNED_SHORT, 0); // render
+            }
+            if (item.index >= numTriangleSets) {
+                var index = item.index - numTriangleSets;
+                ellipsoid = inputEllipsoids[index];
+                // define model transform, premult with pvmMatrix, feed to vertex shader
+                makeModelTransform(ellipsoid);
+                pvmMatrix = mat4.multiply(pvmMatrix, pvMatrix, mMatrix); // premultiply with pv matrix
+                gl.uniformMatrix4fv(mMatrixULoc, false, mMatrix); // pass in model matrix
+                gl.uniformMatrix4fv(pvmMatrixULoc, false, pvmMatrix); // pass in project view model matrix
+
+                // reflectivity: feed to the fragment shader
+                gl.uniform3fv(ambientULoc, ellipsoid.ambient); // pass in the ambient reflectivity
+                gl.uniform3fv(diffuseULoc, ellipsoid.diffuse); // pass in the diffuse reflectivity
+                gl.uniform3fv(specularULoc, ellipsoid.specular); // pass in the specular reflectivity
+                gl.uniform1f(shininessULoc, ellipsoid.n); // pass in the specular exponent
+
+                gl.uniform1f(alphaUniform, ellipsoid.alpha);
+                gl.uniform1i(lightModeUniform, lightMode);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffers[numTriangleSets + index]); // activate vertex buffer
+                gl.vertexAttribPointer(vPosAttribLoc, 3, gl.FLOAT, false, 0, 0); // feed vertex buffer to shader
+                gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffers[numTriangleSets + index]); // activate normal buffer
+                gl.vertexAttribPointer(vNormAttribLoc, 3, gl.FLOAT, false, 0, 0); // feed normal buffer to shader
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, textureBuffers[numTriangleSets + index]);
+                gl.vertexAttribPointer(vTextAttribLoc, 2, gl.FLOAT, false, 0, 0);
+
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, textures[numTriangleSets + index]);
+                gl.uniform1i(samplerUniform, 0);
+
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, triangleBuffers[numTriangleSets + index]); // activate tri buffer
+                // draw a transformed instance of the ellipsoid
+                gl.drawElements(gl.TRIANGLES, triSetSizes[numTriangleSets + index], gl.UNSIGNED_SHORT, 0); // render
+            }
+
+        }
     }
 
     renderOpaque();
@@ -1098,7 +1201,7 @@ function loadTexture(){
         textures[whichTriSet].image.crossOrigin = "Anonymous";
         (function (whichTriSet) {
             textures[whichTriSet].image.onload = function () {
-                console.log("whichTriset" + whichTriSet);
+                //console.log("whichTriset" + whichTriSet);
                 handleLoadedTexture(textures[whichTriSet]);
             }
         })(whichTriSet);
@@ -1117,12 +1220,17 @@ function loadTexture(){
  
         (function (index) {
             textures[index].image.onload = function () {
-                console.log("whichEllpset" + index);
+                //console.log("whichEllpset" + index);
                 handleLoadedTexture(textures[index]);
             }
         })(index);
         textures[index].image.src = INPUT_TEXTURE_URL + inputEllipsoids[whichEllipsoid].texture;
      }
+}
+
+function getDepth(zModel) {
+    var zEye = Eye[2];
+    return Math.abs(zModel - zEye);
 }
 
 function isPowerOf2(value) {
